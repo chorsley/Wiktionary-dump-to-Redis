@@ -17,8 +17,10 @@ my @test_words = qw'actuality set';
 my @article_filters = ('Wiktionary:', 'Template:', 'Help:', 'Appendix:', 
                        'Main page:', 'Category:');
 
-my %words = read_in_xml_dict($mediawiki_dump, \@article_filters);
+%words = read_in_xml_dict($mediawiki_dump, \@article_filters);
 
+# check for words that don't import properly
+# turn this into a unit test at some stage.
 for my $word (@test_words){
     print STDERR "$word: " . Dumper($words{$word}) if $DEBUG;
 }
