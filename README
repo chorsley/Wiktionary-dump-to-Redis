@@ -16,9 +16,9 @@ redis> LRANGE sink 0 -1
 2. "noun:::A '''sink''' is a [[device]] that [[remove]]s [[heat]] or [[energy]]."
 3. "verb:::{{ti verb}} If something '''sinks''', it goes down, usually into water."
 
-Spaces have been replaced with underscores (_):
+Phrases with spaces need to use quote marks:
 
-redis> LRANGE Pacific_Ocean 0 -1
+redis> LRANGE "Pacific Ocean" 0 -1
 1. "proper_noun:::The '''Pacific Ocean''' is a very large [[body]] of water east of [[Asia]] and west of the [[America]]s."
 
 Dump files available from:
@@ -34,6 +34,6 @@ for anything else.
 
 Dependencies:
 
-Redis
+AnyEvent::Redis
 MediaWiki::DumpFile
 Data::Dumper

@@ -1,6 +1,6 @@
 use MediaWiki::DumpFile;
 use Data::Dumper;
-use Redis;
+use AnyEvent::Redis;
 use strict;
 
 our $DEBUG = 0;
@@ -17,6 +17,7 @@ my @test_words = qw'actuality set';
 my @article_filters = ('Wiktionary:', 'Template:', 'Help:', 'Appendix:', 
                        'Main page:', 'Category:');
 
+print STDERR "Parsing $mediawiki_dump...\n";
 %words = read_in_xml_dict($mediawiki_dump, \@article_filters);
 
 # check for words that don't import properly
@@ -59,13 +60,14 @@ sub read_in_xml_dict{
             chomp $line;
             print STDERR "$line\n" if grep ($_ eq $word, @test_words) 
                                       && $DEBUG;
-            
+           
+            # get part of speech ($pos)
             if ($line =~ /(?=^\{?)\=\= ?([\w\s]+) ?\=\=/){
                 $pos = lc($1);
-                # trim
                 $pos =~ s/^ | $//g;
                 $words{$word}{$pos} = ();
             }
+            # get definitions
             elsif ($pos && $line =~ /^\#([^:].*)/){
                 my $def = $1;
                 $def =~ s/^ | $//g;
@@ -80,21 +82,21 @@ sub read_in_xml_dict{
 sub write_to_redis{
     my ($words) = @_;
 
-    my $r;
-    # assume Redis on localhost, standard port
-    eval{
-        $r = Redis->new;
-    };
-    die "Couldn't connect to Redis: $@" if $@;
+    my $r = AnyEvent::Redis->new(
+        host     => '127.0.0.1',
+        encoding => 'utf8',
+        on_error => sub { die @_ },
+    );
+    print STDERR "Connecting to Redis...\n";
+    my $info = $r->info->recv;
+    print STDERR "Adding words to Redis...\n";
 
     for my $word (keys %$words){
        for my $pos (sort keys %{$words->{$word}}){
            print STDERR "Adding $word:$pos\n" if $DEBUG;
            for my $defn (@{$words->{$word}{$pos}}){
-               # TODO: Can Redis handle spaces in key names?
-               $word =~ s/ /_/g;
-               $pos =~ s/ /_/g;
-               $r->rpush("$word", "$pos\:\:\:$defn") if $defn;
+               print STDERR "  Adding def: $defn\n" if $DEBUG;
+               my $cmd = $r->rpush($word, "$pos\:\:\:$defn") if $defn;
            }
        }
     }
