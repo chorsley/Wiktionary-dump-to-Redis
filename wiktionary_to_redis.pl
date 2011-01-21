@@ -3,7 +3,9 @@ use Data::Dumper;
 use AnyEvent::Redis;
 use strict;
 
+our $REDIS_SERVER_IP = "127.0.0.1";
 our $DEBUG = 0;
+
 my %words;
 my $mediawiki_dump = $ARGV[0];
 
@@ -83,7 +85,7 @@ sub write_to_redis{
     my ($words) = @_;
 
     my $r = AnyEvent::Redis->new(
-        host     => '127.0.0.1',
+        host     => $REDIS_SERVER_IP,
         encoding => 'utf8',
         on_error => sub { die @_ },
     );

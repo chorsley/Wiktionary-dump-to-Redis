@@ -16,7 +16,7 @@ redis> LRANGE sink 0 -1
 2. "noun:::A '''sink''' is a [[device]] that [[remove]]s [[heat]] or [[energy]]."
 3. "verb:::{{ti verb}} If something '''sinks''', it goes down, usually into water."
 
-Phrases with spaces need to use quote marks:
+Queries with spaces need to use quote marks via the Redis CLI:
 
 redis> LRANGE "Pacific Ocean" 0 -1
 1. "proper_noun:::The '''Pacific Ocean''' is a very large [[body]] of water east of [[Asia]] and west of the [[America]]s."
@@ -31,6 +31,12 @@ http://download.wikimedia.org/simplewiktionary/
 
 Wiki markup on other Wiktionary sites varies, so I can't guarantee it will work
 for anything else.
+
+If you want to re-import a new dump into the dictionary, you'll need to clear
+the data already in Redis to avoid duplicate definitions:
+
+$ redis-cli
+redis> flushall
 
 Dependencies:
 
