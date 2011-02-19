@@ -6,6 +6,7 @@ use strict;
 our $REDIS_SERVER_IP = "127.0.0.1";
 our $DEBUG = 0;
 
+my $target_langauge = "English";
 my @test_words = ('actuality', 'set', 'ramparts', 'touch base');
 my @article_filters = ('Wiktionary:', 'Template:', 'Help:', 'Appendix:', 
                        'Main page:', 'Category:');
