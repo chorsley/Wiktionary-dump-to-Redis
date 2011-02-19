@@ -19,8 +19,8 @@ eval{
 
 for my $test_word (keys %test_words){
     print STDERR "Word:$test_word\n";
-    my @vals = $r->lrange($test_word, 0, 100);
-    is scalar @vals, $test_words{$test_word}, "Correct defn# for $test_word";
+    my @vals = $r->lrange($test_word, 0, -1);
+    is scalar @vals, $test_words{$test_word}, "Correct defns # for $test_word:" . @vals;
 }
 
 done_testing;

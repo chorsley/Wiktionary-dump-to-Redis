@@ -1,9 +1,9 @@
 use MediaWiki::DumpFile;
 use Data::Dumper;
-use AnyEvent::Redis;
+use Redis;
 use strict;
 
-our $REDIS_SERVER_IP = "127.0.0.1";
+our $REDIS_SERVER_IP = "127.0.0.1:6379";
 our $DEBUG = 0;
 
 my $target_langauge = "English";
@@ -113,14 +113,10 @@ sub read_in_xml_dict{
 sub write_to_redis{
     my ($words) = @_;
 
-    my $r = AnyEvent::Redis->new(
-        host     => $REDIS_SERVER_IP,
-        encoding => 'utf8',
-        on_error => sub { die @_ },
-    );
-    print STDERR "Connecting to Redis...\n";
-    my $info = $r->info->recv;
-    print STDERR "Adding words to Redis...\n";
+    my $r = Redis->new(server => $REDIS_SERVER_IP);
+    $r->ping || die "No server";
+
+    print STDERR "Connected to Redis...\n";
 
     for my $word (keys %$words){
        for my $pos (sort keys %{$words->{$word}}){
