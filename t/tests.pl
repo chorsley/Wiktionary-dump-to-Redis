@@ -4,9 +4,16 @@ use Redis;
 use Data::Dumper;
 
 my %test_words = (
-    free => 5,
+    free => 6,
     about => 3,
-    'pacific ocean' => 1,
+    'pacific ocean' => 1, # phrase
+    actuality => 2, 
+    set => 15,
+    ramparts => 1, # only in en Wikipedia
+    'touch base' => 2, # only in en Wikipedia
+    seoul => 1,  # capitalised in dict
+    underscores => 1,
+    rages => 1, # markup is {{noun|rage|rages}} - how to handle?
 );
 
 my $REDIS_SERVER_IP = '127.0.0.1:6379';
@@ -16,6 +23,7 @@ eval{
     $r = Redis->new(server => $REDIS_SERVER_IP);
 };
 
+plan tests => scalar keys(%test_words);
 
 for my $test_word (keys %test_words){
     print STDERR "Word:$test_word\n";

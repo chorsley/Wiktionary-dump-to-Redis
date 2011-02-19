@@ -4,14 +4,18 @@ use Redis;
 use strict;
 
 our $REDIS_SERVER_IP = "127.0.0.1:6379";
-our $DEBUG = 0;
+our $DEBUG = 1;
+our %PARSERS = (
+    'http://simple.wiktionary.org/wiki/Main_Page' => \&simplewik_parse,
+    'http://en.wiktionary.org/wiki/Wiktionary:Main_Page' => \&enwik_parse,
+);
+
+our $REDIS = redis_connect();
 
 my $target_langauge = "English";
-my @test_words = ('actuality', 'set', 'ramparts', 'touch base');
 my @article_filters = ('Wiktionary:', 'Template:', 'Help:', 'Appendix:', 
                        'Main page:', 'Category:');
 
-my %words;
 my (@mediawiki_dumps) = @ARGV;
 
 if (grep {-f $_} @mediawiki_dumps != scalar @mediawiki_dumps 
@@ -24,16 +28,8 @@ if (grep {-f $_} @mediawiki_dumps != scalar @mediawiki_dumps
 
 for my $mediawiki_dump (@mediawiki_dumps){
     print STDERR "Parsing $mediawiki_dump...\n";
-    %words = read_in_xml_dict($mediawiki_dump, \@article_filters);
+    read_in_xml_dict($mediawiki_dump, \@article_filters);
 }
-
-# check for words that don't import properly
-# turn this into a unit test at some stage.
-for my $word (@test_words){
-    print STDERR "$word: " . Dumper($words{$word}) if $DEBUG;
-}
-
-write_to_redis(\%words);
 
 print join(", ", @mediawiki_dumps) ."now imported into Redis.\n\n";
 
@@ -53,78 +49,125 @@ sub read_in_xml_dict{
 
     my $mw = MediaWiki::DumpFile->new;
     my $pages = $mw->pages($dict_file);
+    my $base = $pages->base;
     my $item_count = 0;
 
     while (defined(my $page = $pages->next)){
         my $text = $page->revision->text;
         my $word = $page->title;
-        my $pos;
-        my $correct_language = 1;
 
         print STDERR "Parsed $word: $item_count\n" if $item_count++ % 1000 == 0 
                                                    && $DEBUG;
 
         next if grep { $word =~ /$_/ } @$article_filters;
-        # words could be created by previous dump files
-        next if exists $words{$word};
 
-        # only interested in English words (for now
-        if ($text =~ /^==(?!English).*==/){
-            next;
+        my @stored_defs = $REDIS->lrange(lc($word), 0, -1);
+        #print Dumper @v . "\n";
+        if (scalar @stored_defs == 0){
+             print "ADDING $word not in\n";
+             print join ", ", @stored_defs;
         }
 
-        $words{$word} = {};
+        next if scalar @stored_defs > 0;
+       
+        my %defns = $PARSERS{$base}($text, $page);      
 
-        foreach my $line (split(/\n/, $text)){
-            chomp $line;
-            print STDERR "$line\n" if grep ($_ eq $word, @test_words) 
-                                      && $DEBUG;
-        
-                
-            # get part of speech ($pos)
-            #if ($line =~ /(?=^\{?)\=\=\=? ?([\w\s]+) ?\=\=\=?/){
-            # this format in En Wiktionary: 2 letter language code + PoS
-            if ($line =~ /^{{(\w\w)\-([\w\-]+)/){
-                if ($1 eq "en"){
-                    $pos = lc($2);
-                    $pos =~ s/^ | $//g;
-                    $words{$word}{$pos} = ();
-                }
-                # another language
-                else{
-                    $pos = undef;
-                }
-            }
-            elsif ($line =~ /^{{(\w+)}}$/){
-                $pos = $1;
-            }
-            # get definitions
-            elsif ($pos && $line =~ /^\#([^:].*)/){
-                my $def = $1;
-                $def =~ s/^ | $//g;
-                push @{$words{$word}{$pos}}, $def;
-            }
+        if (keys %defns){
+            print STDERR "   Defs: ". Dumper %defns. "\n";
+            write_to_redis($word, \%defns);
+        }
+        else {
+            print STDERR "   ** No defns for $word\n";
         }
     }
 
-    return %words;
 }
 
 sub write_to_redis{
-    my ($words) = @_;
+    my ($word, $defns) = @_;
 
+   for my $pos (sort keys %{$defns}){
+       print STDERR "Adding $word:$pos\n" if $DEBUG;
+       for my $defn (@{$defns->{$pos}}){
+           print STDERR "  Adding def: $defn\n" if $DEBUG;
+           my $cmd = $REDIS->rpush(lc($word), "$pos\:\:\:$defn") if $defn;
+       }
+   }
+}
+
+sub redis_connect{
     my $r = Redis->new(server => $REDIS_SERVER_IP);
     $r->ping || die "No server";
 
     print STDERR "Connected to Redis...\n";
-
-    for my $word (keys %$words){
-       for my $pos (sort keys %{$words->{$word}}){
-           print STDERR "Adding $word:$pos\n" if $DEBUG;
-           for my $defn (@{$words->{$word}{$pos}}){
-               print STDERR "  Adding def: $defn\n" if $DEBUG;
-               my $cmd = $r->rpush(lc($word), "$pos\:\:\:$defn") if $defn;
-           }
-       }
-    }
+    return $r;
 }
+
+############# Parsers ################
+
+sub simplewik_parse{
+    my ($text) = @_;
+
+    my $pos;
+    my %defns = ();
+
+    foreach my $line (split(/\n/, $text)){
+        chomp $line;
+
+        if ($line =~ /(?=^\{?)\=\= ?([\w\s]+) ?\=\=/){
+            $pos = lc($1);
+            $pos =~ s/^ | $//g;
+            $defns{$pos} = ();
+        }
+        elsif ($pos && $line =~ /^\#([^:].*)/){
+            my $def = $1;
+            $def =~ s/^ | $//g;
+            push @{$defns{$pos}}, $def;
+        }
+    }
+
+    return %defns;
+}
+
+sub enwik_parse{
+    my ($text) = @_;
+
+    my $pos;
+    my $correct_language = 1;
+    my %defns = ();
+
+    # only interested in English words (for now
+    if ($text =~ /^==(?!English).*==/){
+        next;
+    }
+
+    foreach my $line (split(/\n/, $text)){
+        chomp $line;
+            
+        # get part of speech ($pos)
+        #if ($line =~ /(?=^\{?)\=\=\=? ?([\w\s]+) ?\=\=\=?/){
+        # this format in En Wiktionary: 2 letter language code + PoS
+        if ($line =~ /^\{\{(\w\w)\-([\w\-]+)/){
+            if ($1 eq "en"){
+                $pos = lc($2);
+                $pos =~ s/^ | $//g;
+                $defns{$pos} = ();
+            }
+            # another language
+            else{
+                $pos = undef;
+            }
+        }
+        elsif ($line =~ /^{{(\w+)}}$/){
+            $pos = $1;
+        }
+        # get definitions
+        elsif ($pos && $line =~ /^\#([^:].*)/){
+            my $def = $1;
+            $def =~ s/^ | $//g;
+            push @{$defns{$pos}}, $def;
+        }
+    }
+
+}
+
