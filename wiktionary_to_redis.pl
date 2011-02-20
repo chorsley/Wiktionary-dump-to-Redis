@@ -1,3 +1,5 @@
+#!/usr/bin/perl -w
+
 use MediaWiki::DumpFile;
 use Data::Dumper;
 use Redis;
@@ -8,13 +10,17 @@ our $DEBUG = 1;
 our %PARSERS = (
     'http://simple.wiktionary.org/wiki/Main_Page' => \&simplewik_parse,
     'http://en.wiktionary.org/wiki/Wiktionary:Main_Page' => \&enwik_parse,
+    'default' => \&enwik_parse,
 );
+our $REDIRECT_LABEL = "redir";
+our $TARGET_LANGUAGES = qw(English);
+
+our @TEST_WORDS = ('linking');
 
 our $REDIS = redis_connect();
 
-my $target_langauge = "English";
-my @article_filters = ('Wiktionary:', 'Template:', 'Help:', 'Appendix:', 
-                       'Main page:', 'Category:');
+my @article_filters = ('Wiktionary:', 'Help:', 'Appendix:', 
+                       'Main page:', 'Category:', 'Template:', 'Index:');
 
 my (@mediawiki_dumps) = @ARGV;
 
@@ -55,6 +61,17 @@ sub read_in_xml_dict{
     while (defined(my $page = $pages->next)){
         my $text = $page->revision->text;
         my $word = $page->title;
+        my %defns;
+        my $parser = $PARSERS{$base} || $PARSERS{default};
+
+        # some words are also stored in templates, usually with multi-spellings 
+        #$word =~ s/^Template\://;
+
+        #next unless grep { lc($word) eq $_ } @TEST_WORDS;
+        #print STDERR $text;
+
+        # don't relate to words
+        next if $word =~ /^MediaWiki:/;
 
         print STDERR "Parsed $word: $item_count\n" if $item_count++ % 1000 == 0 
                                                    && $DEBUG;
@@ -62,22 +79,16 @@ sub read_in_xml_dict{
         next if grep { $word =~ /$_/ } @$article_filters;
 
         my @stored_defs = $REDIS->lrange(lc($word), 0, -1);
-        #print Dumper @v . "\n";
-        if (scalar @stored_defs == 0){
-             print "ADDING $word not in\n";
-             print join ", ", @stored_defs;
-        }
-
+       
         next if scalar @stored_defs > 0;
        
-        my %defns = $PARSERS{$base}($text, $page);      
+        %defns = &$parser($text, $page);
 
         if (keys %defns){
-            print STDERR "   Defs: ". Dumper %defns. "\n";
             write_to_redis($word, \%defns);
         }
         else {
-            print STDERR "   ** No defns for $word\n";
+            print STDERR "   ** No defns for $word\n" if $DEBUG;
         }
     }
 
@@ -87,9 +98,8 @@ sub write_to_redis{
     my ($word, $defns) = @_;
 
    for my $pos (sort keys %{$defns}){
-       print STDERR "Adding $word:$pos\n" if $DEBUG;
        for my $defn (@{$defns->{$pos}}){
-           print STDERR "  Adding def: $defn\n" if $DEBUG;
+           print STDERR "  Adding $word:$pos: $defn\n" if $DEBUG;
            my $cmd = $REDIS->rpush(lc($word), "$pos\:\:\:$defn") if $defn;
        }
    }
@@ -124,6 +134,12 @@ sub simplewik_parse{
             $def =~ s/^ | $//g;
             push @{$defns{$pos}}, $def;
         }
+        elsif ($line =~ /\{\{plural of\|(.*?)\}\}/){
+            push @{$defns{$pos}}, $line;
+        }
+        elsif ($line =~ /^\#REDIRECT ?\[\[(.*?)\]\]/i){
+            push @{$defns{$REDIRECT_LABEL}}, $1;
+        }
     }
 
     return %defns;
@@ -131,43 +147,48 @@ sub simplewik_parse{
 
 sub enwik_parse{
     my ($text) = @_;
-
     my $pos;
     my $correct_language = 1;
     my %defns = ();
+    my $lang;
 
-    # only interested in English words (for now
-    if ($text =~ /^==(?!English).*==/){
-        next;
-    }
+    # only interested in English words (for now)
+    #if ($text =~ /^\=\=(?!English).*\=\=/){
+    #    return;
+    #}
+    #else{
+    #    $lang = "English";
+    #}
+
+    #return if $text !~ /^== ?English ?==/i;
 
     foreach my $line (split(/\n/, $text)){
         chomp $line;
             
         # get part of speech ($pos)
-        #if ($line =~ /(?=^\{?)\=\=\=? ?([\w\s]+) ?\=\=\=?/){
+        if ($line =~ /^\=\= ?([\w\s]+) ?\=\=/){
+            last if $1 ne "English";
+        }
+        elsif ($line =~ /(?=^\{?)\=\=\=?[ \{\}]*([\w\s]+)[ \{\}]*\=\=\=?/){
         # this format in En Wiktionary: 2 letter language code + PoS
-        if ($line =~ /^\{\{(\w\w)\-([\w\-]+)/){
-            if ($1 eq "en"){
-                $pos = lc($2);
-                $pos =~ s/^ | $//g;
-                $defns{$pos} = ();
-            }
-            # another language
-            else{
-                $pos = undef;
-            }
+        #if ($line =~ /^\{\{(\w\w)\-([\w\-]+)/){
+            $pos = lc($1);
+            $pos =~ s/^ | $//g;
+            $defns{$pos} = ();
         }
-        elsif ($line =~ /^{{(\w+)}}$/){
-            $pos = $1;
-        }
+        # new language - don't need
+        
+        #elsif ($line =~ /^{{(\w+)}}$/){
+        #    $pos = $1;
+        #}
         # get definitions
-        elsif ($pos && $line =~ /^\#([^:].*)/){
+        elsif ($pos && $line =~ /^\#([^:*].*)/){
             my $def = $1;
             $def =~ s/^ | $//g;
             push @{$defns{$pos}}, $def;
         }
     }
 
+    return %defns;
 }
 
