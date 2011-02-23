@@ -45,7 +45,7 @@ for my $mediawiki_dump (@mediawiki_dumps){
     read_in_xml_dict($mediawiki_dump, \@article_filters);
 }
 
-print join(", ", @mediawiki_dumps) ."now imported into Redis.\n\n";
+print join(", ", @mediawiki_dumps) ." now imported into Redis.\n\n";
 
 print<<"EOI";
 Find words like this:
@@ -133,7 +133,7 @@ sub simplewik_parse{
             $def =~ s/^ | $//g;
             push @{$defns{$pos}}, $def;
         }
-        elsif ($line =~ /\{\{plural of\|(.*?)\}\}/){
+        elsif ($pos && $line =~ /\{\{plural of\|(.*?)\}\}/){
             push @{$defns{$pos}}, $line;
         }
         elsif ($line =~ /^\#REDIRECT ?\[\[(.*?)\]\]/i){

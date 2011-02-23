@@ -1,0 +1,10 @@
+0.2
+
+* Added initial support for parsing English Wiktionary dump
+* Previously reading in whole file than writing, now read/write word by word
+
+0.1
+
+* Initial release
+* Parse Simple Wiktionary dump into Redis
+
