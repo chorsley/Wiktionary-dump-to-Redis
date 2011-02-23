@@ -1,9 +1,15 @@
-This is a simple script designed to read a Wiktionary XML dump file and import
-definitions into Redis. It's not so robust right now, but you might use it as 
-a base to scratch your own itch.
+This is a simple script designed to read one or more Wiktionary XML dump files
+and import definitions into Redis. It needs more far rigorous testing, but 
+the results seem good enough to experiment with.
 
-Usage:
-wiktionary_to_redis.pl <wiktionary_dump_file.xml>
+Usage
+=====
+
+$ wiktionary_to_redis.pl <wiktionary_dump.xml> <2nd_wiktionary_dump.xml> ...
+
+You can import one or multiple files. Definitions in files listed first are
+used. This was designed to use definitions from Simple Wiktionary if available,
+then English Wiktionary as a fallback.
 
 Make sure Redis (http://redis.io) is running first. 
 Definitions are imported as a list with format <part of speech>:::<definition>.
@@ -21,16 +27,30 @@ Queries with spaces need to use quote marks via the Redis CLI:
 redis> LRANGE "Pacific Ocean" 0 -1
 1. "proper_noun:::The '''Pacific Ocean''' is a very large [[body]] of water east of [[Asia]] and west of the [[America]]s."
 
-Dump files available from:
+Getting the data
+================
 
-http://download.wikimedia.org/backup-index.html
+Dump files are available from:
 
-Currently, it's only been tested to work with the Simple English site:
+http://dumps.wikimedia.org/
 
-http://download.wikimedia.org/simplewiktionary/
+Currently, it's only been tested to work with the Simple English and English
+sites:
+
+http://download.wikimedia.org/simplewiktionary/latest/simplewiktionary- \
+latest-pages-articles.xml.bz2
+http://download.wikimedia.org/enwiktionary/latest/enwiktionary-latest- \
+pages-articles.xml.bz2
 
 Wiki markup on other Wiktionary sites varies, so I can't guarantee it will work
-for anything else.
+for anything else. By default, it will assume the same markup as English
+Wiktionary.
+
+Updating the dictionary
+=======================
+
+If you're running the script with updated dump data, current definitions won't
+be updated, but new words will be added.
 
 If you want to re-import a new dump into the dictionary, you'll need to clear
 the data already in Redis to avoid duplicate definitions:
@@ -38,8 +58,9 @@ the data already in Redis to avoid duplicate definitions:
 $ redis-cli
 redis> flushall
 
-Dependencies:
+Dependencies
+============
 
-AnyEvent::Redis
+Redis
 MediaWiki::DumpFile
 Data::Dumper
